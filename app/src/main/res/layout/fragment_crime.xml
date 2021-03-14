@@ -27,15 +27,20 @@
         android:layout_height="wrap_content"
         android:id="@+id/crime_date" />
 
+    <Button
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:id="@+id/crime_time" />
+    <Button
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="@string/delete_crime"
+        android:id="@+id/delete_crime" />
+
     <CheckBox
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:id="@+id/crime_solved"
         android:text="@string/crime_solved_label" />
-    <CheckBox
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:id="@+id/crime_call_police"
-        android:text="@string/crime_call_police" />
 </LinearLayout>
 

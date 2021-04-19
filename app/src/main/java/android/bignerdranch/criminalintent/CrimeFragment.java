@@ -3,35 +3,41 @@ package android.bignerdranch.criminalintent;
 import android.app.Activity;
 import android.content.Intent;
 import android.content.pm.PackageManager;
+import android.content.pm.ResolveInfo;
 import android.database.Cursor;
+import android.graphics.Bitmap;
 import android.net.Uri;
 import android.os.Bundle;
 import android.provider.ContactsContract;
+import android.provider.MediaStore;
 import android.text.Editable;
 import android.text.TextWatcher;
 import android.text.format.DateFormat;
+import android.util.Log;
 import android.view.LayoutInflater;
-import android.view.Menu;
-import android.view.MenuInflater;
-import android.view.MenuItem;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.Button;
 import android.widget.CheckBox;
 import android.widget.CompoundButton;
 import android.widget.EditText;
+import android.widget.ImageButton;
+import android.widget.ImageView;
 
-import androidx.core.app.ShareCompat;
+import androidx.core.content.FileProvider;
 import androidx.fragment.app.Fragment;
 import androidx.fragment.app.FragmentManager;
 
+import java.io.File;
 import java.util.Date;
+import java.util.List;
 import java.util.UUID;
 
 public class CrimeFragment extends Fragment {
-    // request code:
+    // request codes:
     private static final int REQUEST_DATE = 0;
     private static final int REQUEST_CONTACT = 1;
+    private static final int REQUEST_PHOTO = 2;
 
     // DatePickerFragment's tag:
     private static final String DIALOG_DATE = "DialogDate";
@@ -41,7 +47,11 @@ public class CrimeFragment extends Fragment {
     private Button mReportButton;   // a reference to the report crime button.
     private Button mSuspectButton;  // a reference to the pick suspect button.
     private CheckBox mSolvedCheckBox;   // CheckBox reference
-    private Button mRemoveButton;   // a reference to the remove crime button.
+    private ImageButton mPhotoButton;   // references for the photo and
+    private ImageView mPhotoView;       //   camera button
+    private File mPhotoFile;            // stores the location for the file
+    private ImageView mPhotoView1;
+    private File mPhotoFile1;
     // an argument to add to the bundle
     private static final String ARG_CRIME_ID = "crime_id";
 
@@ -49,23 +59,16 @@ public class CrimeFragment extends Fragment {
     @Override
     public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        setHasOptionsMenu(true);
         UUID crimeId = (UUID)getArguments().getSerializable(ARG_CRIME_ID);
         mCrime = CrimeLab.get(getActivity()).getCrime(crimeId);
-
+        mPhotoFile = CrimeLab.get(getActivity()).getPhotoFile(mCrime);
+        mPhotoFile1 = CrimeLab.get(getActivity()).getPhotoFile1(mCrime);
     }
 
     @Override
     public void onPause() {
         super.onPause();
         CrimeLab.get(getActivity()).updateCrime(mCrime);
-    }
-
-    @Override
-    public void onCreateOptionsMenu(Menu menu, MenuInflater inflater) {
-        super.onCreateOptionsMenu(menu, inflater);
-        inflater.inflate(R.menu.fragment_crime, menu);
-
     }
 
     @Override
@@ -104,6 +107,17 @@ public class CrimeFragment extends Fragment {
             finally {
                 c.close();
             }
+        }
+        //handle the request for taking a picture
+        else if(requestCode == REQUEST_PHOTO) {
+            updatePhotoView();
+
+            // since we're done taking the picture now, revoke the permission
+            // to write files
+            Uri uri = FileProvider.getUriForFile(getActivity(),
+                    "android.bignerdranch.criminalintent.fileprovider",
+                    mPhotoFile);
+            getActivity().revokeUriPermission(uri, Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
         }
     }
 
@@ -177,24 +191,14 @@ public class CrimeFragment extends Fragment {
         mReportButton.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                Intent i = ShareCompat.IntentBuilder.from(getActivity())
-                        .setType("text/plain")
-                        .setText(getCrimeReport())
-                        .setSubject(getString(R.string.crime_report_subject))
-                        .setChooserTitle(getString(R.string.send_report))
-                        .createChooserIntent();
+                Intent i = new Intent(Intent.ACTION_SEND);
+                i.setType("text/plain");
+                i.putExtra(Intent.EXTRA_TEXT, getCrimeReport());
+                i.putExtra(Intent.EXTRA_SUBJECT, getString(R.string.crime_report_subject));
+                i = Intent.createChooser(i, getString(R.string.send_report));
                 startActivity(i);
-
-//                Intent i = new Intent(Intent.ACTION_SEND);
-//                i.setType("text/plain");
-//                i.putExtra(Intent.EXTRA_TEXT, getCrimeReport());
-//                i.putExtra(Intent.EXTRA_SUBJECT, getString(R.string.crime_report_subject));
-//                i = Intent.createChooser(i, getString(R.string.send_report));
-//                startActivity(i);
-
             }
         });
-
 
         // make the intent
         final Intent pickContact = new Intent(Intent.ACTION_PICK,
@@ -224,18 +228,97 @@ public class CrimeFragment extends Fragment {
         if(pm.resolveActivity(pickContact, PackageManager.MATCH_DEFAULT_ONLY) == null)
             mSuspectButton.setEnabled(false);
 
-        return v;
-    }
+        // get the references for the widgets handling the photo and camera
+        mPhotoButton = (ImageButton)v.findViewById(R.id.crime_camera);
+        mPhotoView = (ImageView)v.findViewById(R.id.crime_photo);
 
-    @Override
-    public boolean onOptionsItemSelected(MenuItem item) {
-        switch(item.getItemId()) {
-            case R.id.delete_crime:            // this is the id of the menu option selected
-                CrimeLab.get(getActivity()).deleteCrime(mCrime);
-                getActivity().finish();
-            default:    // if the selected option isn't found, defer to the superclass
-                return super.onOptionsItemSelected(item);
-        }
+        // We intend to take a picture, dammit.
+        final Intent captureImage = new Intent(MediaStore.ACTION_IMAGE_CAPTURE);
+        // Is there a place to store the photo and is there an app to take it?
+        boolean canTakePhoto = mPhotoFile != null && captureImage.resolveActivity(pm) != null;
+        // Set the button accordingly
+        mPhotoButton.setEnabled(canTakePhoto);
+        // Now, create a listener for the button to take the picture, if it's enabled.
+        mPhotoButton.setOnClickListener(new View.OnClickListener() {
+           @Override
+           public void onClick(View v) {
+               Log.d("HANKSTER", "onClick Enter");
+               // acquire the uri for where we want to store the file
+               Uri uri = FileProvider.getUriForFile(getActivity(),
+                       "android.bignerdranch.criminalintent.fileprovider",
+                       mPhotoFile);
+               Log.d("HANKSTER", "after Line 232");
+               // specify the extra where to put the picture
+               captureImage.putExtra(MediaStore.EXTRA_OUTPUT, uri);
+               // get a list of possible activities to take the pictures.
+               List<ResolveInfo> cameraActivities =
+                       getActivity().getPackageManager().queryIntentActivities(
+                               captureImage, PackageManager.MATCH_DEFAULT_ONLY);
+               // grant write permissions to any activity that can take a picture
+               for(ResolveInfo activity : cameraActivities) {
+                   getActivity().grantUriPermission(activity.activityInfo.packageName,
+                           uri,
+                           Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
+               }
+               //start the activity to take a picture
+               startActivityForResult(captureImage, REQUEST_PHOTO);
+           }
+        });
+
+
+
+        // Part A of question
+        mPhotoView.setClickable(true);
+        mPhotoView.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                ImageViewFragment dialog = new ImageViewFragment();
+                Bundle args = new Bundle();
+                args.putString("filePath", mPhotoFile.toString());
+                dialog.setArguments(args);
+                dialog.show(getFragmentManager(), "ImageViewDialog");
+
+            }
+        });
+
+
+
+
+
+
+        // Part B of question
+        mPhotoView1 = (ImageView)v.findViewById(R.id.crime_photo1);
+        mPhotoView1.setClickable(true);
+        mPhotoView1.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View view) {
+                Log.d("HANKSTER", "onClick Enter");
+                // acquire the uri for where we want to store the file
+                Uri uri = FileProvider.getUriForFile(getActivity(),
+                        "android.bignerdranch.criminalintent.fileprovider",
+                        mPhotoFile1 );
+                Log.d("HANKSTER", "after Line 232");
+                // specify the extra where to put the picture
+                captureImage.putExtra(MediaStore.EXTRA_OUTPUT, uri);
+                // get a list of possible activities to take the pictures.
+                List<ResolveInfo> cameraActivities =
+                        getActivity().getPackageManager().queryIntentActivities(
+                                captureImage, PackageManager.MATCH_DEFAULT_ONLY);
+                // grant write permissions to any activity that can take a picture
+                for(ResolveInfo activity : cameraActivities) {
+                    getActivity().grantUriPermission(activity.activityInfo.packageName,
+                            uri,
+                            Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
+                }
+                //start the activity to take a picture
+                startActivityForResult(captureImage, REQUEST_PHOTO);
+            }
+        });
+
+
+
+        updatePhotoView();
+        return v;
     }
 
     public static CrimeFragment newInstance(UUID crimeId) {
@@ -271,5 +354,36 @@ public class CrimeFragment extends Fragment {
 
         return report;
     }
+
+    // helper method in CrimeFragment to load the new Bitmap into an ImageView widget:
+    private void updatePhotoView() {
+        // if the picture doesn't exist, clears the ImageView widget so you don't
+        // see anything
+        if(mPhotoFile == null || !mPhotoFile.exists()) {
+            mPhotoView.setImageDrawable(null);
+            //mPhotoView1.setImageDrawable(null);
+        }
+        // otherwise, sets the widget with the picture.
+        else {
+            Bitmap bm = PictureUtils.getScaledBitmap(
+                    mPhotoFile.getPath(), getActivity());
+                mPhotoView.setImageBitmap(bm);
+                //mPhotoView1.setImageBitmap(bm);
+        }
+
+        if(mPhotoFile1 == null || !mPhotoFile1.exists()) {
+            //mPhotoView.setImageDrawable(null);
+            mPhotoView1.setImageDrawable(null);
+        }
+        // otherwise, sets the widget with the picture.
+        else {
+            Bitmap bm = PictureUtils.getScaledBitmap(
+                    mPhotoFile1.getPath(), getActivity());
+            //mPhotoView.setImageBitmap(bm);
+            mPhotoView1.setImageBitmap(bm);
+        }
+    }
+
+
 }
 

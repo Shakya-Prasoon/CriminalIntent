@@ -23,6 +23,14 @@ public class Crime {
 
     public void setSuspect(String suspect) { mSuspect = suspect; }
 
+    public String getPhotoFileName() {
+        return "IMG_" + getID().toString() + ".jpg";
+    }
+
+    public String getPhotoFileName1() {
+        return "IMG1_" + getID().toString() + ".jpg";
+    }
+
     public UUID getID() {
         return mId;
     }

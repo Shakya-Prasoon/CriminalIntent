@@ -3,9 +3,9 @@ package android.bignerdranch.criminalintent;
 import android.content.ContentValues;
 import android.content.Context;
 import android.database.Cursor;
-import android.database.CursorWrapper;
 import android.database.sqlite.SQLiteDatabase;
 
+import java.io.File;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
@@ -50,19 +50,6 @@ public class CrimeLab {
         );
     }
 
-    public void deleteCrime(Crime c){
-        String uuidString = c.getID().toString();
-        ContentValues values = getContentValues(c);
-        mDatabase.delete(
-                CrimeDbSchema.CrimeTable.NAME,  // name of table with row to update
-                // building the where clause for the SQL command
-                CrimeDbSchema.CrimeTable.Cols.UUID + " = ?", new String[] { uuidString }
-        );
-    }
-
-
-
-
     public List<Crime> getCrimes() {
         // return new ArrayList<>();  this is replaced with:
         List<Crime> crimes = new ArrayList<>();
@@ -102,8 +89,15 @@ public class CrimeLab {
         }
     }
 
+    public File getPhotoFile(Crime crime) {
+        File filesDir = mContext.getFilesDir();
+        return new File(filesDir, crime.getPhotoFileName());
+    }
 
-
+    public File getPhotoFile1(Crime crime) {
+        File filesDir = mContext.getFilesDir();
+        return new File(filesDir, crime.getPhotoFileName1());
+    }
 
     private static ContentValues getContentValues(Crime crime) {
         ContentValues values = new ContentValues();
